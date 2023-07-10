@@ -40,14 +40,17 @@ Alternatively, to copy the name, press `Y`.
 
 ## Commands
 
-### `gips viewnbt`
+### `gips viewnbt [path]`
 You must be holding an item to view its NBT.
 
-### `gips viewnbt copy`
-You must be holding an item to view its NBT, copies the NBT to your clipboard.
+### `gips copynbt [path]`
+You must be holding an item to copy its NBT to your clipboard.
+
+### `gips give <item> [amount]`
+Gives you an item, do not put a space between the item and its NBT, must be in creative mode.
 
 ### `gips modifynbt <data>`
 Modifies the item you are holding, must be in creative mode.
 
 ### `gips dump`
-Toggles the dumping feature of the mod, this feature is hardcoded to be on by default at startup. The NBT is dumped to a file under `<minecraftFolder>/gibs`, with a name formatted as the current time in milliseconds, as a hex, then by what the container name is called. **This is only triggered every time you open a container and NOT when you look at anything.** No filtering is done, unlike when you manually copy the NBT. **Dumping will pipe the player's inventory in addition to the container contents.**
+Toggles the dumping feature of the mod, this feature is hardcoded to be on by default at startup. The NBT is dumped to a file under `<minecraftFolder>/gibs`, with a name formatted as the current time in milliseconds. **This is only triggered every time you open a container and NOT when you look at anything.** No filtering is done, unlike when you manually copy the NBT. **Dumping will pipe the player's inventory in addition to the container contents.**

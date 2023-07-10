@@ -1,6 +1,8 @@
 package teal.gips;
 
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -14,7 +16,9 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.command.CommandException;
+import net.minecraft.command.argument.ItemStackArgumentType;
 import net.minecraft.command.argument.NbtCompoundArgumentType;
+import net.minecraft.command.argument.NbtPathArgumentType;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.projectile.ProjectileUtil;
 import net.minecraft.item.ItemStack;
@@ -22,6 +26,7 @@ import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtHelper;
 import net.minecraft.nbt.NbtList;
+import net.minecraft.network.packet.c2s.play.CreativeInventoryActionC2SPacket;
 import net.minecraft.predicate.NbtPredicate;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
@@ -63,8 +68,15 @@ public class Gips implements ClientModInitializer {
 
         ClientCommandRegistrationCallback.EVENT.register((dispatcher,commandRegistryAccess) -> dispatcher.register(
                 ClientCommandManager.literal("gips").then(
-                        ClientCommandManager.literal("viewnbt").executes(Gips::getNbt)
-                                .then(ClientCommandManager.literal("copy")
+                        ClientCommandManager.literal("viewnbt")
+                                .executes(Gips::getNbt)
+                                .then(ClientCommandManager.argument("path", NbtPathArgumentType.nbtPath())
+                                        .executes(Gips::getNbt)
+                                )
+                ).then(
+                        ClientCommandManager.literal("copynbt")
+                                .executes(context -> getNbt(context, true))
+                                .then(ClientCommandManager.argument("path", NbtPathArgumentType.nbtPath())
                                         .executes(context -> getNbt(context, true))
                                 )
                 ).then(
@@ -75,8 +87,35 @@ public class Gips implements ClientModInitializer {
                 ).then(
                         ClientCommandManager.literal("dump")
                                 .executes(Gips::dumpNbt)
+                ).then(
+                        ClientCommandManager.literal("give")
+                                .then(ClientCommandManager.argument("item", ItemStackArgumentType.itemStack(commandRegistryAccess))
+                                        .executes(Gips::giveItem)
+                                        .then(ClientCommandManager.argument("count", IntegerArgumentType.integer(1, 64))
+                                                .executes(Gips::giveItem)
+                                        )
+                                )
+                        )
                 )
-        ));
+        );
+    }
+
+    private static int giveItem(CommandContext<FabricClientCommandSource> context) throws CommandSyntaxException {
+        if (minecraft.player == null) throw new CommandException(Text.literal("Could not get player."));
+        if (!minecraft.player.isCreative()) throw new CommandException(Text.literal("You need to be in creative mode."));
+        int amount = 1;
+        try {
+            amount = IntegerArgumentType.getInteger(context, "count");
+        } catch (IllegalArgumentException IAE) {
+
+        }
+        for(int slot = 0; slot < 9; slot++) {
+            if(!minecraft.player.getInventory().getStack(slot).isEmpty()) continue;
+            minecraft.player.networkHandler.sendPacket(new CreativeInventoryActionC2SPacket(slot + 36, ItemStackArgumentType.getItemStackArgument(context, "item").createStack(amount, true)));
+            minecraft.player.sendMessage(Text.literal("Created item."), true);
+            return 0;
+        }
+        throw new CommandException(Text.literal("Your hotbar is full."));
     }
 
     private static int dumpNbt(CommandContext<FabricClientCommandSource> context) {
@@ -104,13 +143,26 @@ public class Gips implements ClientModInitializer {
         ItemStack heldItem = minecraft.player.getMainHandStack();
         if (heldItem.isEmpty()) throw new CommandException(Text.literal("You need to hold an item."));
 
-        if (copy) {
-            setClipboard(heldItem.getOrCreateNbt().asString());
+        NbtPathArgumentType.NbtPath path;
+        NbtElement nbt = heldItem.getOrCreateNbt();
+
+        try {
+            path = context.getArgument("path", NbtPathArgumentType.NbtPath.class);
+            // Pray and hope that the first element exists.
+            nbt = path.get(heldItem.getOrCreateNbt()).get(0);
+        } catch (IllegalArgumentException IAE) {
+
+        } catch (CommandSyntaxException e) {
+            throw new CommandException(Text.literal("Invalid NBT Path."));
+        }
+
+        if(copy) {
+            setClipboard(nbt.asString());
 
             context.getSource().getPlayer().sendMessage(Text.literal("Copied NBT to clipboard."), true);
         } else {
             MutableText msg = Text.literal("Properties of ").append(heldItem.getName()).append("\n");
-            msg.append(NbtHelper.toPrettyPrintedText(heldItem.getOrCreateNbt()));
+            msg.append(NbtHelper.toPrettyPrintedText(nbt));
 
             context.getSource().getPlayer().sendMessage(msg, false);
         }

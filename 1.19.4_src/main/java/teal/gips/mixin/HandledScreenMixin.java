@@ -37,6 +37,7 @@ public abstract class HandledScreenMixin <T extends ScreenHandler> extends Scree
     @Shadow protected int y;
     @Shadow protected int backgroundWidth;
 
+    @Shadow @Final protected Text playerInventoryTitle;
     private static final int FUCKINGVALUE = 36;
 
     protected HandledScreenMixin(Text title) {
@@ -73,7 +74,7 @@ public abstract class HandledScreenMixin <T extends ScreenHandler> extends Scree
                 for(ItemStack itemStack : itemStacks)
                     nbtList.add(itemStack.isEmpty() ? EMPTY : itemStack.writeNbt(new NbtCompound()));
 
-                FileWriter fileWriter = new FileWriter(String.format("./gips/%s-%s.nbt", Long.toString(System.currentTimeMillis(), 16), this.getClass().getSimpleName()));
+                FileWriter fileWriter = new FileWriter(String.format("./gips/%s.nbt", System.currentTimeMillis()));
                 fileWriter.write(nbtList.asString());
                 fileWriter.close();
             }

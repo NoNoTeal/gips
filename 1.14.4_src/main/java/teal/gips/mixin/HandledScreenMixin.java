@@ -67,7 +67,7 @@ public abstract class HandledScreenMixin <T extends Container> extends Screen {
                 for(ItemStack itemStack : itemStacks)
                     nbtList.add(itemStack.isEmpty() ? EMPTY : itemStack.toTag(new CompoundTag()));
 
-                FileWriter fileWriter = new FileWriter(String.format("./gips/%s-%s.nbt", Long.toString(System.currentTimeMillis(), 16), this.getClass().getSimpleName()));
+                FileWriter fileWriter = new FileWriter(String.format("./gips/%s.nbt", System.currentTimeMillis()));
                 fileWriter.write(nbtList.asString());
                 fileWriter.close();
             }
