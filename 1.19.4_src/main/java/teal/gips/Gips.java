@@ -1,5 +1,6 @@
 package teal.gips;
 
+import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
@@ -11,7 +12,7 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.minecraft.block.BlockState;
+import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
@@ -34,6 +35,7 @@ import net.minecraft.util.Formatting;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.hit.HitResult;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
@@ -70,14 +72,11 @@ public class Gips implements ClientModInitializer {
                 ClientCommandManager.literal("gips").then(
                         ClientCommandManager.literal("viewnbt")
                                 .executes(Gips::getNbt)
-                                .then(ClientCommandManager.argument("path", NbtPathArgumentType.nbtPath())
+                                .then(ClientCommandManager.argument("copy", BoolArgumentType.bool())
                                         .executes(Gips::getNbt)
-                                )
-                ).then(
-                        ClientCommandManager.literal("copynbt")
-                                .executes(context -> getNbt(context, true))
-                                .then(ClientCommandManager.argument("path", NbtPathArgumentType.nbtPath())
-                                        .executes(context -> getNbt(context, true))
+                                        .then(ClientCommandManager.argument("path", NbtPathArgumentType.nbtPath())
+                                                .executes(Gips::getNbt)
+                                        )
                                 )
                 ).then(
                         ClientCommandManager.literal("modifynbt")
@@ -134,13 +133,15 @@ public class Gips implements ClientModInitializer {
     }
 
     private static int getNbt(CommandContext<FabricClientCommandSource> context) {
-        return getNbt(context, false);
-    }
-
-    private static int getNbt(CommandContext<FabricClientCommandSource> context, boolean copy) {
         if (minecraft.player == null) throw new CommandException(Text.literal("Could not get player."));
         ItemStack heldItem = minecraft.player.getMainHandStack();
         if (heldItem.isEmpty()) throw new CommandException(Text.literal("You need to hold an item."));
+        boolean copy = false;
+        try {
+            copy = BoolArgumentType.getBool(context, "copy");
+        } catch (IllegalArgumentException IAE) {
+
+        }
 
         NbtPathArgumentType.NbtPath path;
         NbtElement nbt = heldItem.getOrCreateNbt();
@@ -148,6 +149,7 @@ public class Gips implements ClientModInitializer {
         try {
             path = context.getArgument("path", NbtPathArgumentType.NbtPath.class);
             // Pray and hope that the first element exists.
+            // Apparently returns a singleton list, so it will always exist.
             nbt = path.get(heldItem.getOrCreateNbt()).get(0);
         } catch (IllegalArgumentException IAE) {
 
@@ -174,8 +176,7 @@ public class Gips implements ClientModInitializer {
         if(gNBT) {
             Entity entity = minecraft.getCameraEntity();
             if(entity != null) {
-                HitResult blockHit = entity.raycast(50.0D, 0.0F, false);
-                HitResult fluidHit = entity.raycast(50.0D, 0.0F, true);
+                HitResult blockHit = entity.raycast(50.0D, 0.0F, true);
                 Entity entityHit = null;
                 Vec3d vec3d = entity.getEyePos();
                 Vec3d vec3d2 = entity.getRotationVec(1.0F).multiply(50.0F);
@@ -185,16 +186,23 @@ public class Gips implements ClientModInitializer {
                 EntityHitResult entityHitResult = ProjectileUtil.raycast(entity, vec3d, vec3d3, box, predicate, 50*50);
                 if (entityHitResult != null && !(vec3d.squaredDistanceTo(entityHitResult.getPos()) > (double)50*50)) entityHit = entityHitResult.getEntity();
                 if(entityHit != null) {
-                    copyNBT(NbtPredicate.entityToNbt(entityHit));
+                    copyNBT(NbtPredicate.entityToNbt(entityHit), false);
                 } else if(blockHit.getType() == HitResult.Type.BLOCK) {
-                    BlockState blockState = client.world.getBlockState(((BlockHitResult) blockHit).getBlockPos());
-                    if(blockState != null) {
-                        copyNBT(NbtHelper.fromBlockState(blockState));
+                    BlockPos blockPos = ((BlockHitResult) blockHit).getBlockPos();
+                    BlockEntity blockEntity = client.world.getBlockEntity(blockPos);
+                    NbtCompound nbt = new NbtCompound();
+                    if (blockEntity != null) {
+                        nbt = blockEntity.createNbt();
                     }
-                } else if(fluidHit.getType() == HitResult.Type.BLOCK) {
-                    BlockState blockState = client.world.getBlockState(((BlockHitResult) fluidHit).getBlockPos());
-                    if(blockState != null) {
-                        copyNBT(NbtHelper.fromBlockState(blockState));
+                    if (client.player.hasPermissionLevel(2)) {
+                        // Copy a detailed version if the server / integrated server allows
+                        // Doesn't do anything if we don't have permission.
+                        final NbtCompound fNbt = nbt;
+                        client.getNetworkHandler().getDataQueryHandler().queryBlockNbt(blockPos, (nbtCompound) ->
+                            copyNBT(nbtCompound == null ? fNbt : nbtCompound, true)
+                        );
+                    } else {
+                        copyNBT(nbt, true);
                     }
                 }
             }
@@ -206,24 +214,30 @@ public class Gips implements ClientModInitializer {
         minecraft.getToastManager().add(new GipsToast("Copied stack name", "to clipboard!", false));
     }
 
-    public static void copyNBT(List<ItemStack> itemStacks) {
+    public static void copyNBT(List<ItemStack> itemStacks, boolean blockify) {
         switch(itemStacks.size()) {
             case 0 -> minecraft.getToastManager().add(new GipsToast("No slot selected.", true));
-            case 1 -> copyNBT(itemStacks.get(0).getOrCreateNbt());
+            case 1 -> copyNBT(itemStacks.get(0).getOrCreateNbt(), blockify);
             default -> {
+                NbtCompound Items = new NbtCompound();
                 NbtList nbtList = new NbtList();
                 for (ItemStack itemStack : itemStacks) {
                     nbtList.add(itemStack.isEmpty() ? EMPTY : itemStack.writeNbt(new NbtCompound()));
                 }
-                copyNBT(nbtList);
+                Items.put("Items", nbtList);
+                copyNBT(Items, blockify);
             }
         }
     }
 
-    private static void copyNBT(NbtElement nbt) {
+    private static void copyNBT(NbtElement nbt, boolean blockify) {
         if(nbt.equals(nbtCache)) return;
         nbtCache = nbt;
-        Gips.setClipboard(nbt.asString());
+        if (blockify) {
+            NbtCompound BET = new NbtCompound();
+            BET.put("BlockEntityTag", nbt);
+            Gips.setClipboard(BET.asString());
+        } else Gips.setClipboard(nbt.asString());
         minecraft.getToastManager().add(new GipsToast("Copied NBT to clipboard!", false));
     }
 }

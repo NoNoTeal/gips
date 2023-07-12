@@ -4,10 +4,13 @@
   "package": "teal.gips.mixin",
   "compatibilityLevel": "JAVA_17",
   "client": [
-    "HandledScreenMixin",
-    "ChatScreenMixin"
+    "ChatScreenMixin",
+    "HandledScreenMixin"
   ],
   "injectors": {
     "defaultRequire": 1
-  }
+  },
+  "mixins": [
+    "ChatMessageC2SPacketMixin"
+  ]
 }

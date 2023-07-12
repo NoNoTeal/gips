@@ -12,18 +12,24 @@ import net.minecraft.screen.ScreenHandler;
 import net.minecraft.screen.slot.Slot;
 import net.minecraft.text.LiteralText;
 import net.minecraft.text.Text;
+import net.minecraft.text.TranslatableText;
 import net.minecraft.util.Formatting;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import teal.gips.GipsToast;
 
 import java.io.FileWriter;
 import java.io.IOException;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
 
 import static teal.gips.Gips.*;
@@ -32,13 +38,12 @@ import static teal.gips.Gips.*;
 public abstract class HandledScreenMixin <T extends ScreenHandler> extends Screen {
 
     @Shadow @Nullable protected Slot focusedSlot;
+    @Shadow @Final protected Text playerInventoryTitle;
     @Shadow @Final protected T handler;
-
-    @Shadow protected int x;
     @Shadow protected int y;
-    @Shadow protected int backgroundWidth;
 
-    private static final int FUCKINGVALUE = 36;
+    @Unique private static final int FUCKINGVALUE = 36;
+    @Unique private static final DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd_HH.mm.ss");
 
     protected HandledScreenMixin(Text title) {
         super(title);
@@ -50,9 +55,10 @@ public abstract class HandledScreenMixin <T extends ScreenHandler> extends Scree
     )
     protected void init(CallbackInfo ci) {
         final int offsetY = handler instanceof CreativeInventoryScreen.CreativeScreenHandler ? -30 : 0;
-
-        addDrawableChild(new ButtonWidget(x + backgroundWidth - 175,  y - 18 + offsetY, 60, 14, new LiteralText("Copy NBT"), b -> copyNBT(getItemStacks(false))));
-        addDrawableChild(new ButtonWidget(x + backgroundWidth - 110, y - 18 + offsetY, 65, 14, new LiteralText("Copy Name"), b -> copyName(title)));
+        final int centerX = (this.width/2) - (65/2);
+        addDrawableChild(new ButtonWidget(centerX - 65, y - 18 + offsetY, 60, 14, new TranslatableText("teal.gips.key.copynbt"), b -> copyNBT(getItemStacks(false), true)));
+        addDrawableChild(new ButtonWidget(centerX, y - 18 + offsetY, 65, 14, new TranslatableText("teal.gips.key.copyname"), b -> copyName(title)));
+        addDrawableChild(new ButtonWidget(centerX + 70, y - 18 + offsetY, 60, 14, new TranslatableText("teal.gips.dumpnbt"), this::writeToFile));
     }
 
     @Inject(
@@ -60,6 +66,11 @@ public abstract class HandledScreenMixin <T extends ScreenHandler> extends Scree
             at = @At("TAIL")
     )
     public void close(CallbackInfo ci) {
+        writeToFile(null);
+    }
+
+    @Unique
+    private void writeToFile(@Nullable ButtonWidget b) {
         try {
             if (dumpNbt) {
                 if (!gipsFolder.exists()) gipsFolder.mkdirs();
@@ -70,16 +81,29 @@ public abstract class HandledScreenMixin <T extends ScreenHandler> extends Scree
                 for(ItemStack itemStack : itemStacks)
                     nbtList.add(itemStack.isEmpty() ? EMPTY : itemStack.writeNbt(new NbtCompound()));
 
-                FileWriter fileWriter = new FileWriter(String.format("./gips/%s.nbt", System.currentTimeMillis()));
+                String title = this.getTitle().getString();
+                String inventory = this.playerInventoryTitle.getString();
+                // Order of "best" name: Name of container -> "Inventory" -> Name of obfuscated class (though when modding it shows the deobfuscated class)
+                String bestName = dateFormat.format(new Date()) + '-' + (title.isEmpty() ? inventory.isEmpty() ? this.getClass().getSimpleName() : inventory : title);
+                FileWriter fileWriter = new FileWriter(String.format("./gips/%s.nbt", bestName));
                 fileWriter.write(nbtList.asString());
                 fileWriter.close();
+
+                if (b != null && client != null) {
+                    client.getToastManager().add(new GipsToast("Dumped NBT", false));
+                }
             }
         } catch (IOException e) {
             e.printStackTrace();
-            minecraft.player.sendMessage(new LiteralText("Couldn't dump NBT to file, see logs for details.").formatted(Formatting.RED), false);
+            if(b == null) {
+                minecraft.player.sendMessage(new LiteralText("Couldn't dump NBT to file, see logs for details.").formatted(Formatting.RED), false);
+            } else {
+                b.setMessage(new LiteralText("Dump NBT").formatted(Formatting.RED));
+            }
         }
     }
 
+    @Unique
     private List<ItemStack> getItemStacks(boolean preserveInventory) {
         boolean isCreativeScreen = handler instanceof CreativeInventoryScreen.CreativeScreenHandler;
         boolean isSurvivalScreen = handler instanceof PlayerScreenHandler;
@@ -104,7 +128,7 @@ public abstract class HandledScreenMixin <T extends ScreenHandler> extends Scree
     public void keyPressedInject(int keyCode, int scanCode, int modifiers, CallbackInfoReturnable<Boolean> cir) {
         super.keyPressed(keyCode, scanCode, modifiers);
         if (focusedSlot != null) {
-            if (GetNBTKeybind.matchesKey(keyCode, scanCode)) copyNBT(List.of(focusedSlot.getStack()));
+            if (GetNBTKeybind.matchesKey(keyCode, scanCode)) copyNBT(List.of(focusedSlot.getStack()), false);
             else if (GetNameKeybind.matchesKey(keyCode, scanCode)) copyName(focusedSlot.getStack().getName());
         }
     }
