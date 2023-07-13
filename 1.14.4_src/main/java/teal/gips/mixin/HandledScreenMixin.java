@@ -26,12 +26,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import teal.gips.GipsToast;
 
+import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
+import java.util.regex.Pattern;
 
 import static teal.gips.Gips.*;
 
@@ -57,7 +59,7 @@ public abstract class HandledScreenMixin <T extends Container> extends Screen {
     protected void init(CallbackInfo ci) {
         final int offsetY = container instanceof CreativeInventoryScreen.CreativeContainer ? -30 : 0;
         final int centerX = (this.width/2) - (65/2);
-        addButton(new ButtonWidget(centerX - 65, y - 18 + offsetY, 60, 14, I18n.translate("teal.gips.key.copynbt"), b -> copyNBT(getItemStacks(false), true)));
+        addButton(new ButtonWidget(centerX - 65, y - 18 + offsetY, 60, 14, I18n.translate("teal.gips.key.copynbt"), b -> copyNBT(getContainerNBT(), false)));
         addButton(new ButtonWidget(centerX, y - 18 + offsetY, 65, 14, I18n.translate("teal.gips.key.copyname"), b -> copyName(title)));
         addButton(new ButtonWidget(centerX + 70, y - 18 + offsetY, 60, 14, I18n.translate("teal.gips.dumpnbt"), this::writeToFile));
     }
@@ -73,19 +75,22 @@ public abstract class HandledScreenMixin <T extends Container> extends Screen {
             if (dumpNbt) {
                 if (!gipsFolder.exists()) gipsFolder.mkdirs();
 
-                ListTag nbtList = new ListTag();
-                List<ItemStack> itemStacks = getItemStacks(true);
-
-                for(ItemStack itemStack : itemStacks)
-                    nbtList.add(itemStack.isEmpty() ? EMPTY : itemStack.toTag(new CompoundTag()));
+                CompoundTag BET = getContainerNBT();
+                ListTag playerInventory = minecraft.player.inventory.serialize(new ListTag());
 
                 String title = this.getTitle().getString();
-                String inventory = this.playerInventory.getDisplayName().getString();
+                String inventory = this.playerInventory.getName().getString();
+                String date = dateFormat.format(new Date());
                 // Order of "best" name: Name of container -> "Inventory" -> Name of obfuscated class (though when modding it shows the deobfuscated class)
-                String bestName = dateFormat.format(new Date()) + '-' + (title.isEmpty() ? inventory.isEmpty() ? this.getClass().getSimpleName() : inventory : title);
-                FileWriter fileWriter = new FileWriter(String.format("./gips/%s.nbt", bestName));
-                fileWriter.write(nbtList.asString());
+                String bestName = (date + '-' + (title.isEmpty() ? inventory.isEmpty() ? this.getClass().getSimpleName() : inventory : title)).replaceAll(Pattern.quote(File.separator), "");
+                FileWriter fileWriter = new FileWriter(String.format("./gips/%s.nbt", bestName.substring(0, Math.min(bestName.length(), 252))));
+                fileWriter.write(BET.asString());
                 fileWriter.close();
+
+                bestName = date + "+InventoryDump";
+                FileWriter fileWriter2 = new FileWriter(String.format("./gips/%s.nbt", bestName.substring(0, Math.min(bestName.length(), 252))));
+                fileWriter2.write(playerInventory.asString());
+                fileWriter2.close();
 
                 if (b != null && minecraft != null) {
                     minecraft.getToastManager().add(new GipsToast("Dumped NBT", false));
@@ -102,21 +107,35 @@ public abstract class HandledScreenMixin <T extends Container> extends Screen {
     }
 
     @Unique
-    private List<ItemStack> getItemStacks(boolean preserveInventory) {
+    private CompoundTag getContainerNBT() {
         boolean isCreativeScreen = container instanceof CreativeInventoryScreen.CreativeContainer;
         boolean isSurvivalScreen = container instanceof PlayerContainer;
         final int offsetSlots = isCreativeScreen ? 9*3 : 0;
         List<ItemStack> itemStacks = container.slots.stream().map(Slot::getStack).toList();
-        int sliceIndex = itemStacks.size();
         if (isCreativeScreen) {
             // 47 = the 9*4 slots of inventory space, 5 of armor + shield, 5 for the invisible crafting, and 1 for destroy item(?)
             // 47 = 36                               +5                   +5                                +1
             if (itemStacks.size() != 47) {
-                return ((CreativeInventoryScreen.CreativeContainer) this.container).itemList;
+                itemStacks = ((CreativeInventoryScreen.CreativeContainer) this.container).itemList;
             }
-        } else if (!isSurvivalScreen) sliceIndex = itemStacks.size() - FUCKINGVALUE + offsetSlots;
-        if(preserveInventory) sliceIndex = itemStacks.size();
-        return itemStacks.subList(0, sliceIndex);
+        } else if (!isSurvivalScreen) {
+            int sliceIndex = itemStacks.size() - FUCKINGVALUE + offsetSlots;
+            itemStacks = itemStacks.subList(0, sliceIndex);
+        }
+        CompoundTag nbt = new CompoundTag();
+        CompoundTag BET = new CompoundTag();
+        ListTag Items = new ListTag();
+        for(int i=0; i < itemStacks.size(); i++) {
+            ItemStack itemStack = itemStacks.get(i);
+            if(itemStack.isEmpty()) continue;
+            CompoundTag nbtCompound = itemStack.toTag(new CompoundTag());
+            nbtCompound.putInt("Slot", i);
+            Items.add(nbtCompound);
+        }
+        BET.put("Items", Items);
+        BET.putString("CustomName", Text.Serializer.toJson(title));
+        nbt.put("BlockEntityTag", BET);
+        return nbt;
     }
 
     @Inject(
@@ -126,7 +145,7 @@ public abstract class HandledScreenMixin <T extends Container> extends Screen {
     public void keyPressedInject(int keyCode, int scanCode, int modifiers, CallbackInfoReturnable<Boolean> cir) {
         super.keyPressed(keyCode, scanCode, modifiers);
         if (focusedSlot != null) {
-            if (GetNBTKeybind.matchesKey(keyCode, scanCode)) copyNBT(List.of(focusedSlot.getStack()), false);
+            if (GetNBTKeybind.matchesKey(keyCode, scanCode)) copyNBT(focusedSlot.getStack().getOrCreateTag(), false);
             else if (GetNameKeybind.matchesKey(keyCode, scanCode)) copyName(focusedSlot.getStack().getName());
         }
     }

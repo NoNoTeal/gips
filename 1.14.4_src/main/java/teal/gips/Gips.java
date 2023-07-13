@@ -22,7 +22,6 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.ProjectileUtil;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.packet.c2s.play.CreativeInventoryActionC2SPacket;
 import net.minecraft.predicate.NbtPredicate;
@@ -40,14 +39,11 @@ import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.File;
-import java.util.List;
-import java.util.function.Predicate;
 
 @Environment(EnvType.CLIENT)
 public class Gips implements ClientModInitializer {
 
     public static final MinecraftClient minecraft = MinecraftClient.getInstance();
-    public static final CompoundTag EMPTY = new CompoundTag();
     public static final KeyBinding GetNBTKeybind = new KeyBinding("teal.gips.key.copynbt", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_G, "teal.gips");
     public static final KeyBinding GetNameKeybind = new KeyBinding("teal.gips.key.copyname", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_Y, "teal.gips");
     public static final File gipsFolder = new File("./gips/");
@@ -212,23 +208,7 @@ public class Gips implements ClientModInitializer {
         minecraft.getToastManager().add(new GipsToast("Copied stack name", "to clipboard!", false));
     }
 
-    public static void copyNBT(List<ItemStack> itemStacks, boolean blockify) {
-        switch(itemStacks.size()) {
-            case 0 -> minecraft.getToastManager().add(new GipsToast("No slot selected.", true));
-            case 1 -> copyNBT(itemStacks.get(0).getOrCreateTag(), blockify);
-            default -> {
-                CompoundTag Items = new CompoundTag();
-                ListTag nbtList = new ListTag();
-                for (ItemStack itemStack : itemStacks) {
-                    nbtList.add(itemStack.isEmpty() ? EMPTY : itemStack.toTag(new CompoundTag()));
-                }
-                Items.put("Items", nbtList);
-                copyNBT(Items, blockify);
-            }
-        }
-    }
-
-    private static void copyNBT(CompoundTag nbt, boolean blockify) {
+    public static void copyNBT(CompoundTag nbt, boolean blockify) {
         if(nbt.equals(nbtCache)) return;
         nbtCache = nbt;
         if (blockify) {

@@ -25,7 +25,6 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtHelper;
-import net.minecraft.nbt.NbtList;
 import net.minecraft.network.packet.c2s.play.CreativeInventoryActionC2SPacket;
 import net.minecraft.predicate.NbtPredicate;
 import net.minecraft.text.LiteralText;
@@ -41,7 +40,6 @@ import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.File;
-import java.util.List;
 import java.util.function.Predicate;
 
 @Environment(EnvType.CLIENT)
@@ -214,23 +212,7 @@ public class Gips implements ClientModInitializer {
         minecraft.getToastManager().add(new GipsToast("Copied stack name", "to clipboard!", false));
     }
 
-    public static void copyNBT(List<ItemStack> itemStacks, boolean blockify) {
-        switch(itemStacks.size()) {
-            case 0 -> minecraft.getToastManager().add(new GipsToast("No slot selected.", true));
-            case 1 -> copyNBT(itemStacks.get(0).getOrCreateNbt(), blockify);
-            default -> {
-                NbtCompound Items = new NbtCompound();
-                NbtList nbtList = new NbtList();
-                for (ItemStack itemStack : itemStacks) {
-                    nbtList.add(itemStack.isEmpty() ? EMPTY : itemStack.writeNbt(new NbtCompound()));
-                }
-                Items.put("Items", nbtList);
-                copyNBT(Items, blockify);
-            }
-        }
-    }
-
-    private static void copyNBT(NbtElement nbt, boolean blockify) {
+    public static void copyNBT(NbtElement nbt, boolean blockify) {
         if(nbt.equals(nbtCache)) return;
         nbtCache = nbt;
         if (blockify) {
