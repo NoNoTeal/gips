@@ -57,7 +57,7 @@ public abstract class HandledScreenMixin <T extends ScreenHandler> extends Scree
         final int offsetY = handler instanceof CreativeInventoryScreen.CreativeScreenHandler ? -30 : 0;
         final int centerX = (this.width/2) - (65/2);
         addDrawableChild(ButtonWidget
-                .builder(Text.translatable("teal.gips.key.copynbt"), b -> copyNBT(getContainerNBT(), false))
+                .builder(Text.translatable("teal.gips.key.copynbt"), b -> copyNBT(getContainerNBT()))
                 .dimensions(centerX - 65, y - 18 + offsetY, 60, 14).build());
 
         addDrawableChild(ButtonWidget
@@ -153,7 +153,7 @@ public abstract class HandledScreenMixin <T extends ScreenHandler> extends Scree
     public void keyPressedInject(int keyCode, int scanCode, int modifiers, CallbackInfoReturnable<Boolean> cir) {
         super.keyPressed(keyCode, scanCode, modifiers);
         if (focusedSlot != null) {
-            if (GetNBTKeybind.matchesKey(keyCode, scanCode)) copyNBT(focusedSlot.getStack().getOrCreateNbt(), false);
+            if (GetNBTKeybind.matchesKey(keyCode, scanCode)) copyNBT(focusedSlot.getStack().getOrCreateNbt());
             else if (GetNameKeybind.matchesKey(keyCode, scanCode)) copyName(focusedSlot.getStack().getName());
         }
     }

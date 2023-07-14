@@ -12,6 +12,7 @@ import net.fabricmc.fabric.api.client.command.v1.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.block.entity.SkullBlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
@@ -20,6 +21,7 @@ import net.minecraft.command.argument.ItemStackArgumentType;
 import net.minecraft.command.argument.NbtCompoundArgumentType;
 import net.minecraft.command.argument.NbtPathArgumentType;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityType;
 import net.minecraft.entity.projectile.ProjectileUtil;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NbtCompound;
@@ -169,6 +171,7 @@ public class Gips implements ClientModInitializer {
 
     private static void tickEvent(MinecraftClient client) {
         boolean gNBT = GetNBTKeybind.wasPressed();
+        boolean ALT = InputUtil.isKeyPressed(client.getWindow().getHandle(), GLFW.GLFW_KEY_LEFT_ALT);
         if(gNBT) {
             Entity entity = minecraft.getCameraEntity();
             if(entity != null) {
@@ -182,23 +185,58 @@ public class Gips implements ClientModInitializer {
                 EntityHitResult entityHitResult = ProjectileUtil.raycast(entity, vec3d, vec3d3, box, predicate, 50*50);
                 if (entityHitResult != null && !(vec3d.squaredDistanceTo(entityHitResult.getPos()) > (double)50*50)) entityHit = entityHitResult.getEntity();
                 if(entityHit != null) {
-                    copyNBT(NbtPredicate.entityToNbt(entityHit), false);
+                    NbtCompound nbt = new NbtCompound();
+                    NbtCompound ET = NbtPredicate.entityToNbt(entityHitResult.getEntity());
+                    ET.putString("id", EntityType.getId(entityHitResult.getEntity().getType()).toString());
+                    if(!ALT) {
+                        ET.remove("UUIDLeast");
+                        ET.remove("UUIDMost");
+
+                        ET.remove("UUID");
+                        ET.remove("Pos");
+                        ET.remove("Dimension");
+                    }
+                    nbt.put("EntityTag", ET);
+                    if (client.player.hasPermissionLevel(2)) {
+                        final NbtCompound Fnbt = nbt;
+                        client.getNetworkHandler().getDataQueryHandler().queryEntityNbt(entityHitResult.getEntity().getEntityId(), (nbtCompound) -> {
+                            if(nbtCompound != null) {
+                                if(!ALT) {
+                                    nbtCompound.remove("UUIDLeast");
+                                    nbtCompound.remove("UUIDMost");
+
+                                    nbtCompound.remove("UUID");
+                                    nbtCompound.remove("Pos");
+                                    nbtCompound.remove("Dimension");
+                                }
+                                nbtCompound.putString("id", EntityType.getId(entityHitResult.getEntity().getType()).toString());
+                                Fnbt.put("EntityTag", nbtCompound);
+                            }
+                            nbtCompound = Fnbt;
+                            copyNBT(nbtCompound);
+                        });
+                    } else copyNBT(nbt);
                 } else if(blockHit.getType() == HitResult.Type.BLOCK) {
                     BlockPos blockPos = ((BlockHitResult) blockHit).getBlockPos();
                     BlockEntity blockEntity = client.world.getBlockEntity(blockPos);
                     NbtCompound nbt = new NbtCompound();
                     if (blockEntity != null) {
-                        blockEntity.writeNbt(nbt);
+                        nbt = client.addBlockEntityNbt(blockEntity.getCachedState().getBlock().asItem().getDefaultStack(), blockEntity).getOrCreateTag();
+                        // Get rid of the lore
+                        if(nbt.contains("display")) nbt.remove("display");
                     }
-                    if (client.player.hasPermissionLevel(2)) {
+                    if (client.player.hasPermissionLevel(2) && !(blockEntity instanceof SkullBlockEntity)) {
                         // Copy a detailed version if the server / integrated server allows
                         // Doesn't do anything if we don't have permission.
                         final NbtCompound fNbt = nbt;
-                        client.getNetworkHandler().getDataQueryHandler().queryBlockNbt(blockPos, (nbtCompound) ->
-                            copyNBT(nbtCompound == null ? fNbt : nbtCompound, true)
-                        );
+                        client.getNetworkHandler().getDataQueryHandler().queryBlockNbt(blockPos, (nbtCompound) -> {
+                            // The compound doesn't come back wrapped in a BET so just overwrite it manually
+                            if(nbtCompound != null) fNbt.put("BlockEntityTag", nbtCompound);
+                            nbtCompound = fNbt;
+                            copyNBT(nbtCompound);
+                        });
                     } else {
-                        copyNBT(nbt, true);
+                        copyNBT(nbt);
                     }
                 }
             }
@@ -210,14 +248,10 @@ public class Gips implements ClientModInitializer {
         minecraft.getToastManager().add(new GipsToast("Copied stack name", "to clipboard!", false));
     }
 
-    public static void copyNBT(NbtElement nbt, boolean blockify) {
+    public static void copyNBT(NbtElement nbt) {
         if(nbt.equals(nbtCache)) return;
         nbtCache = nbt;
-        if (blockify) {
-            NbtCompound BET = new NbtCompound();
-            BET.put("BlockEntityTag", nbt);
-            Gips.setClipboard(BET.asString());
-        } else Gips.setClipboard(nbt.asString());
+        Gips.setClipboard(nbt.asString());
         minecraft.getToastManager().add(new GipsToast("Copied NBT to clipboard!", false));
     }
 }

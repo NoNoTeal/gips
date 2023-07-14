@@ -25,5 +25,6 @@
     "fabricloader": "*",
     "fabric": "*",
     "minecraft": "~1.15"
-  }
+  },
+  "accessWidener": "gips.accesswidener"
 }
