@@ -15,6 +15,6 @@ public abstract class ChatMessageC2SPacketMixin {
             )
     )
     private int lengthRedirect(String self) {
-        return self.startsWith("/gips ") ? 256 : self.length();
+        return 256;
     }
 }

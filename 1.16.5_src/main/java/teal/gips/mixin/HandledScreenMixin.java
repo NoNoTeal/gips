@@ -31,6 +31,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.regex.Pattern;
@@ -59,7 +60,7 @@ public abstract class HandledScreenMixin <T extends ScreenHandler> extends Scree
     protected void init(CallbackInfo ci) {
         final int offsetY = handler instanceof CreativeInventoryScreen.CreativeScreenHandler ? -30 : 0;
         final int centerX = (this.width/2) - (65/2);
-        addButton(new ButtonWidget(centerX - 65, y - 18 + offsetY, 60, 14, new TranslatableText("teal.gips.key.copynbt"), b -> copyNBT(getContainerNBT())));
+        addButton(new ButtonWidget(centerX - 65, y - 18 + offsetY, 60, 14, new TranslatableText("teal.gips.key.copynbt"), b -> copyNBT(getContainerNBT(false).get(0))));
         addButton(new ButtonWidget(centerX, y - 18 + offsetY, 65, 14, new TranslatableText("teal.gips.key.copyname"), b -> copyName(title)));
         addButton(new ButtonWidget(centerX + 70, y - 18 + offsetY, 60, 14, new TranslatableText("teal.gips.dumpnbt"), this::writeToFile));
     }
@@ -78,20 +79,21 @@ public abstract class HandledScreenMixin <T extends ScreenHandler> extends Scree
             if (dumpNbt) {
                 if (!gipsFolder.exists()) gipsFolder.mkdirs();
 
-                NbtCompound BET = getContainerNBT();
+                List<NbtCompound> splitBETs = getContainerNBT(true);
                 NbtList playerInventory = client.player.inventory.writeNbt(new NbtList());
 
                 String title = this.getTitle().getString();
-                String inventory = this.playerInventory.getName().getString();
+                String inventory = this.playerInventory.getDisplayName().getString();
                 String date = dateFormat.format(new Date());
-                // Order of "best" name: Name of container -> "Inventory" -> Name of obfuscated class (though when modding it shows the deobfuscated class)
-                String bestName = (date + '-' + (title.isEmpty() ? inventory.isEmpty() ? this.getClass().getSimpleName() : inventory : title)).replaceAll(Pattern.quote(File.separator), "");
-                FileWriter fileWriter = new FileWriter(String.format("./gips/%s.nbt", bestName.substring(0, Math.min(bestName.length(), 252))));
-                fileWriter.write(BET.asString());
-                fileWriter.close();
+                for(int i=0; i < splitBETs.size(); i++) {
+                    // Order of "best" name: Name of container -> "Inventory" -> Name of obfuscated class (though when modding it shows the deobfuscated class)
+                    String bestName = (date + String.format("-%s-", i) + (title.isEmpty() ? inventory.isEmpty() ? this.getClass().getSimpleName() : inventory : title)).replaceAll(Pattern.quote(File.separator), "");
+                    FileWriter fileWriter = new FileWriter(String.format("./gips/%s.nbt", bestName.substring(0, Math.min(bestName.length(), 252))));
+                    fileWriter.write(splitBETs.get(i).asString());
+                    fileWriter.close();
+                }
 
-                bestName = date + "+InventoryDump";
-                FileWriter fileWriter2 = new FileWriter(String.format("./gips/%s.nbt", bestName.substring(0, Math.min(bestName.length(), 252))));
+                FileWriter fileWriter2 = new FileWriter("./gips/" + date + "+InventoryDump.nbt");
                 fileWriter2.write(playerInventory.asString());
                 fileWriter2.close();
 
@@ -110,7 +112,7 @@ public abstract class HandledScreenMixin <T extends ScreenHandler> extends Scree
     }
 
     @Unique
-    private NbtCompound getContainerNBT() {
+    private List<NbtCompound> getContainerNBT(boolean split) {
         boolean isCreativeScreen = handler instanceof CreativeInventoryScreen.CreativeScreenHandler;
         boolean isSurvivalScreen = handler instanceof PlayerScreenHandler;
         final int offsetSlots = isCreativeScreen ? 9*3 : 0;
@@ -125,20 +127,30 @@ public abstract class HandledScreenMixin <T extends ScreenHandler> extends Scree
             int sliceIndex = itemStacks.size() - FUCKINGVALUE + offsetSlots;
             itemStacks = itemStacks.subList(0, sliceIndex);
         }
-        NbtCompound nbt = new NbtCompound();
-        NbtCompound BET = new NbtCompound();
-        NbtList Items = new NbtList();
-        for(int i=0; i < itemStacks.size(); i++) {
-            ItemStack itemStack = itemStacks.get(i);
+        List<NbtCompound> splitBETs = new ArrayList<>();
+        List<NbtList> splitItems = new ArrayList<>(List.of(new NbtList()));
+        for(int j=0; j < itemStacks.size(); j++) {
+            int index = split ? (int) Math.floor((double)j/27) : 0;
+            ItemStack itemStack = itemStacks.get(j);
             if(itemStack.isEmpty()) continue;
             NbtCompound nbtCompound = itemStack.writeNbt(new NbtCompound());
-            nbtCompound.putInt("Slot", i);
+            nbtCompound.putInt("Slot", split ? j%27 : j);
+            if(splitItems.size()-1 < index) {
+                splitItems.add(new NbtList());
+            }
+            NbtList Items = splitItems.get(index);
             Items.add(nbtCompound);
+            splitItems.set(index, Items);
         }
-        BET.put("Items", Items);
-        BET.putString("CustomName", Text.Serializer.toJson(title));
-        nbt.put("BlockEntityTag", BET);
-        return nbt;
+        for(NbtList Items : splitItems) {
+            NbtCompound nbt = new NbtCompound();
+            NbtCompound BET = new NbtCompound();
+            BET.put("Items", Items);
+            BET.putString("CustomName", Text.Serializer.toJson(title));
+            nbt.put("BlockEntityTag", BET);
+            splitBETs.add(nbt);
+        }
+        return splitBETs;
     }
 
     @Inject(

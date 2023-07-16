@@ -36,6 +36,6 @@ public abstract class ChatScreenMixin extends Screen {
             )
     )
     public String sendMessage(ChatScreen self, String chatText) {
-        if (chatText.startsWith("/gips")) return chatText; else return self.normalize(chatText);
+        return chatText;
     }
 }

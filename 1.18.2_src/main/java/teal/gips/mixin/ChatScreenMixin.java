@@ -27,14 +27,4 @@ public abstract class ChatScreenMixin extends Screen {
         chatField.setMaxLength(Integer.MAX_VALUE);
     }
 
-    // @Redirect(
-    //         method = "sendMessage",
-    //         at = @At(
-    //                 value = "INVOKE",
-    //                 target = "Lnet/minecraft/client/gui/screen/ChatScreen;normalize(Ljava/lang/String;)Ljava/lang/String;"
-    //         )
-    // )
-    // public String sendMessage(ChatScreen self, String chatText) {
-    //     if (chatText.startsWith("/gips")) return chatText; else return self.normalize(chatText);
-    // }
 }
